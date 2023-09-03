@@ -1,0 +1,42 @@
+VERSION 0.0.1
+
+deps:
+    FROM golang:1.12-alpine
+    WORKDIR /internal/services/users
+    COPY go.mod go.sum ./
+    RUN go mod download
+
+lint:
+  RUN go get golang.org/x/lint/golint
+  COPY main.go .
+  RUN golint -set_exit_status ./...
+
+build:
+    FROM +deps
+    COPY main.go .
+    RUN go build -o users main.go
+    SAVE ARTIFACT users
+
+unit-test:
+    FROM +build
+    COPY *_test.go .
+    RUN go test -v ./... -coverprofile=./cover.out
+    SAVE ARTIFACT ./cover.out
+
+docker:
+    FROM +build
+    ENTRYPOINT ["./users"]
+    SAVE IMAGE users:latest
+
+release-tag:
+    FROM golang:1.21-alpine
+    RUN go install github.com/maykonlf/semver-cli/cmd/semver@v1.0.2
+    COPY .semver.yaml .
+    RUN semver get release > version
+    SAVE ARTIFACT version
+
+release:
+    FROM +docker
+    COPY +release-tag/version .
+    ARG VERSION="$(cat version)"
+    SAVE IMAGE --push service-one:$VERSION
